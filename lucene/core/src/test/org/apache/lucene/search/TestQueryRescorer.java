@@ -20,6 +20,7 @@ package org.apache.lucene.search;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.List;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -30,6 +31,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.similarities.BM25Similarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.spans.SpanNearQuery;
 import org.apache.lucene.search.spans.SpanQuery;
@@ -52,6 +54,53 @@ public class TestQueryRescorer extends LuceneTestCase {
   public static IndexWriterConfig newIndexWriterConfig() {
     // We rely on more tokens = lower score:
     return LuceneTestCase.newIndexWriterConfig().setSimilarity(new ClassicSimilarity());
+  }
+
+  static List<String> dictionary = Arrays.asList("river","quick","brown","fox","jumped","lazy","fence");
+
+  String randomSentence() {
+    final int length = random().nextInt(10);
+    StringBuilder sentence = new StringBuilder(dictionary.get(0)+" ");
+    for (int i = 0; i < length; i++) {
+      sentence.append(dictionary.get(random().nextInt(dictionary.size()-1))+" ");
+    }
+    return sentence.toString();
+  }
+
+  String randomWord() {
+    return dictionary.get(random().nextInt(dictionary.size()-1));
+  }
+
+  public void testRescoreOptmization() throws Exception {
+    Directory dir = newDirectory();
+    RandomIndexWriter w = new RandomIndexWriter(random(), dir, newIndexWriterConfig());
+
+    int numDocs = 100;
+    String fieldName = "field";
+    for (int i = 0; i < numDocs; i++) {
+      Document d = new Document();
+      d.add(newStringField("id", Integer.toString(i), Field.Store.YES));
+      d.add(newTextField(fieldName, randomSentence(), Field.Store.NO));
+      w.addDocument(d);
+    }
+    IndexReader reader = w.getReader();
+    w.close();
+
+    BooleanQuery.Builder bq = new BooleanQuery.Builder();
+    String wordOne = dictionary.get(0);
+    bq.add(new TermQuery(new Term(fieldName, wordOne)), Occur.MUST);
+    IndexSearcher searcher = getSearcher(reader);
+    searcher.setSimilarity(new BM25Similarity());
+    TopDocs hits = searcher.search(bq.build(), numDocs);
+    String wordTwo = randomWord();
+    PhraseQuery phraseQuery = new PhraseQuery(1, fieldName, wordOne, wordTwo);
+
+    int topN = random().nextInt(numDocs-1);
+    TopDocs phraseQueryHits = QueryRescorer.rescore(searcher, hits, phraseQuery, 2.0, topN);
+    assertEquals(topN, phraseQueryHits.scoreDocs.length);
+
+    reader.close();
+    dir.close();
   }
 
   public void testBasic() throws Exception {

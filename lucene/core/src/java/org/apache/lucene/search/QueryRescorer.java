@@ -59,7 +59,7 @@ public abstract class QueryRescorer extends Rescorer {
                     return a.doc - b.doc;
                   }
                 });
-     
+
     List<LeafReaderContext> leaves = searcher.getIndexReader().leaves();
 
     Query rewritten = searcher.rewrite(query);
@@ -127,10 +127,8 @@ public abstract class QueryRescorer extends Rescorer {
       }
     };
 
-    int index = (topN < hits.length) ? topN : hits.length;
-    ArrayUtil.select(hits, 0, index, index-1, sortDocComparator);
-
     if (topN < hits.length) {
+      ArrayUtil.select(hits, 0, hits.length, topN, sortDocComparator);
       ScoreDoc[] subset = new ScoreDoc[topN];
       System.arraycopy(hits, 0, subset, 0, topN);
       hits = subset;
